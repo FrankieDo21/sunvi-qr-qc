@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Scanner - Thùng & Thành Phẩm</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Thư viện quét mã QR -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #reader {
+            width: 100%;
+            border-radius: 8px;
+            border: 2px dashed #d1d5db;
+        }
+        .qr-icon {
+            width: 24px;
+            height: 24px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 space-y-6">
+        <div class="text-center">
+            <h1 class="text-2xl font-bold text-gray-800">Công Ty Sunvi</h1>
+            <p class="text-gray-500">Quét QR Cho Thùng QC</p>
+        </div>
+
+        <!-- Vùng hiển thị camera -->
+        <div id="reader" class="bg-gray-50 p-2"></div>
+        <div id="scanner-status" class="text-center text-sm text-gray-600"></div>
+
+        <!-- Khu vực quét thùng -->
+        <div id="thung-section">
+            <h2 class="text-lg font-semibold text-gray-700">1. Quét Mã Thùng</h2>
+            <div id="thung-result" class="mt-2 p-3 bg-gray-100 rounded-lg text-center text-gray-700 font-mono">
+                Chưa có mã thùng
+            </div>
+        </div>
+
+        <!-- Khu vực quét thành phẩm (ẩn ban đầu) -->
+        <div id="thanhpham-section" class="hidden space-y-4">
+            <div>
+                 <h2 class="text-lg font-semibold text-gray-700">2. Quét Mã Thành Phẩm</h2>
+                 <button id="scan-thanhpham-btn" class="mt-2 w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                    <svg class="qr-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.5a.75.75 0 0 0-.75.75v13.5a.75.75 0 0 0 .75.75h16.5a.75.75 0 0 0 .75-.75V5.25a.75.75 0 0 0-.75-.75H3.75Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 12h7.5" />
+                    </svg>
+                    Quét Thành Phẩm
+                </button>
+            </div>
+           
+            <div>
+                <h3 class="font-semibold text-gray-600">Danh sách Thành Phẩm đã quét: <span id="tp-count" class="font-bold text-blue-600">(0)</span></h3>
+                <ul id="thanhpham-list" class="mt-2 list-disc list-inside bg-gray-50 p-3 rounded-lg min-h-[80px] text-gray-800">
+                    <!-- Các mã thành phẩm sẽ được thêm vào đây -->
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Nút Lưu -->
+        <div class="pt-4">
+            <button id="save-btn" disabled class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg transition duration-300 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                Lưu Dữ Liệu
+            </button>
+        </div>
+
+        <!-- Thông báo -->
+        <div id="message" class="text-center font-medium"></div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH ---
+        // Dán URL của Web App bạn đã deploy ở Google Apps Script vào đây
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbzv_94fGnAoZzKie6xRzBU2kmL0mZWi6eiZ3VfAswZoOwo78lMUfFW9Rgc_Q-ggZuWbww/exec'; 
+        
+        // --- BIẾN TOÀN CỤC ---
+        let currentThungCode = null;
+        let thanhPhamCodes = [];
+        let html5QrCode = null;
+        let isScanningThanhPham = false;
+
+        // --- DOM ELEMENTS ---
+        const thungResultDiv = document.getElementById('thung-result');
+        const thungSection = document.getElementById('thung-section');
+        const thanhPhamSection = document.getElementById('thanhpham-section');
+        const thanhPhamList = document.getElementById('thanhpham-list');
+        const saveBtn = document.getElementById('save-btn');
+        const scanThanhPhamBtn = document.getElementById('scan-thanhpham-btn');
+        const readerDiv = document.getElementById('reader');
+        const messageDiv = document.getElementById('message');
+        const scannerStatus = document.getElementById('scanner-status');
+		const tpCountSpan = document.getElementById('tp-count');
+
+        // --- HÀM XỬ LÝ ---
+
+        function updateThanhPhamListView() {
+			tpCountSpan.textContent = `(${thanhPhamCodes.length})`;
+            thanhPhamList.innerHTML = '';
+            if (thanhPhamCodes.length === 0) {
+                thanhPhamList.innerHTML = '<li class="text-gray-400">Chưa có thành phẩm nào</li>';
+            } else {
+                thanhPhamCodes.forEach(code => {
+                    const li = document.createElement('li');
+                    li.textContent = code;
+                    li.className = 'font-mono';
+                    thanhPhamList.appendChild(li);
+                });
+            }
+            // Kích hoạt nút lưu khi có ít nhất 1 thành phẩm
+            saveBtn.disabled = thanhPhamCodes.length === 0;
+        }
+        
+        function showMessage(text, isError = false) {
+            messageDiv.textContent = text;
+            messageDiv.className = isError ? 'text-red-500' : 'text-green-500';
+            setTimeout(() => messageDiv.textContent = '', 4000);
+        }
+
+        function resetApp() {
+            currentThungCode = null;
+            thanhPhamCodes = [];
+            
+            thungResultDiv.textContent = 'Chưa có mã thùng';
+            thungResultDiv.classList.remove('bg-green-100', 'text-green-800');
+
+            thanhPhamSection.classList.add('hidden');
+            saveBtn.disabled = true;
+            updateThanhPhamListView();
+            
+            startScanningThung();
+        }
+
+        // Hàm xử lý khi quét thành công
+        function onScanSuccess(decodedText, decodedResult) {
+            if (currentThungCode === null) {
+                // Xử lý quét mã thùng
+                currentThungCode = decodedText;
+                thungResultDiv.textContent = currentThungCode;
+                thungResultDiv.classList.add('bg-green-100', 'text-green-800');
+                
+                thanhPhamSection.classList.remove('hidden');
+                scannerStatus.textContent = 'Đã quét mã thùng. Sẵn sàng quét thành phẩm.';
+                
+                // Không cần dừng quét, để người dùng bấm nút mới quét
+                stopScanner();
+
+            } else if (isScanningThanhPham) {
+                // Xử lý quét mã thành phẩm
+                if (!thanhPhamCodes.includes(decodedText)) {
+                    thanhPhamCodes.push(decodedText);
+                    updateThanhPhamListView();
+                    scannerStatus.textContent = `Đã quét: ${decodedText}`;
+                } else {
+                    scannerStatus.textContent = `Mã ${decodedText} đã được quét rồi.`;
+                }
+                isScanningThanhPham = false;
+                stopScanner();
+            }
+        }
+        
+        function onScanFailure(error) {
+            // console.warn(`Code scan error = ${error}`);
+        }
+
+        function startScanner(scanType) {
+            readerDiv.style.display = 'block';
+            scannerStatus.textContent = `Di chuyển camera vào mã QR ${scanType}...`;
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                onScanSuccess,
+                onScanFailure
+            ).catch(err => {
+                 scannerStatus.textContent = "Không thể khởi động camera.";
+                 console.error("Camera start error:", err);
+            });
+        }
+
+        function stopScanner() {
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    readerDiv.style.display = 'none';
+                }).catch(err => console.error("Scanner stop error:", err));
+            } else {
+                 readerDiv.style.display = 'none';
+            }
+        }
+        
+        function startScanningThung() {
+             scannerStatus.textContent = 'Sẵn sàng quét mã Thùng.';
+             startScanner('Thùng');
+        }
+
+        // --- SỰ KIỆN ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            html5QrCode = new Html5Qrcode("reader");
+            updateThanhPhamListView();
+            startScanningThung();
+        });
+
+        scanThanhPhamBtn.addEventListener('click', () => {
+            isScanningThanhPham = true;
+            startScanner('Thành Phẩm');
+        });
+
+        saveBtn.addEventListener('click', () => {
+            if (!currentThungCode || thanhPhamCodes.length === 0) {
+                showMessage('Vui lòng quét mã thùng và ít nhất một mã thành phẩm.', true);
+                return;
+            }
+            
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Đang lưu...';
+
+            const data = {
+                thungCode: currentThungCode,
+                thanhPhamCodes: thanhPhamCodes
+            };
+
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors', // Cần thiết khi gọi Apps Script từ web
+                cache: 'no-cache',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                showMessage('Lưu dữ liệu thành công!', false);
+                resetApp();
+            })
+            .catch(error => {
+                console.error('Lỗi khi lưu:', error);
+                showMessage('Đã xảy ra lỗi. Vui lòng thử lại.', true);
+            })
+            .finally(() => {
+                 saveBtn.textContent = 'Lưu Dữ Liệu';
+                 // Nút vẫn sẽ bị disabled do hàm resetApp()
+            });
+        });
+
+    </script>
+</body>
+</html>
