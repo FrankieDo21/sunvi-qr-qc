@@ -56,7 +56,7 @@
             </div>
            
             <div>
-                <h3 class="font-semibold text-gray-600">Danh sách Thành Phẩm đã quét:</h3>
+                <h3 class="font-semibold text-gray-600">Danh sách Thành Phẩm đã quét: <span id="tp-count" class="font-bold text-blue-600">(0)</span></h3>
                 <ul id="thanhpham-list" class="mt-2 list-disc list-inside bg-gray-50 p-3 rounded-lg min-h-[80px] text-gray-800">
                     <!-- Các mã thành phẩm sẽ được thêm vào đây -->
                 </ul>
@@ -95,10 +95,12 @@
         const readerDiv = document.getElementById('reader');
         const messageDiv = document.getElementById('message');
         const scannerStatus = document.getElementById('scanner-status');
+		const tpCountSpan = document.getElementById('tp-count');
 
         // --- HÀM XỬ LÝ ---
 
         function updateThanhPhamListView() {
+			tpCountSpan.textContent = `(${thanhPhamCodes.length})`;
             thanhPhamList.innerHTML = '';
             if (thanhPhamCodes.length === 0) {
                 thanhPhamList.innerHTML = '<li class="text-gray-400">Chưa có thành phẩm nào</li>';
